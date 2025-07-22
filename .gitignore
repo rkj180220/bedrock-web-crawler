@@ -1,0 +1,15 @@
+infrastructure/
+__pycache__/
+node_modules/
+.env
+*.pyc
+cdk.out/
+.cdk.staging/
+dist/
+build/
+.DS_Store
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+.mypy_cache/
