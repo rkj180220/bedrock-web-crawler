@@ -147,24 +147,49 @@ def scrape_website(url: str) -> Dict[str, Any]:
                 }
             content_bytes += chunk
 
-        # Handle gzip decompression if needed
-        if response.headers.get('content-encoding') == 'gzip':
+        # Handle gzip decompression more intelligently
+        content_encoding = response.headers.get('content-encoding', '').lower()
+        logger.info(f"Content encoding header: {content_encoding}")
+        logger.info(f"Content starts with: {content_bytes[:10]}")
+
+        # Check if content is actually gzipped by looking at magic bytes
+        if content_bytes.startswith(b'\x1f\x8b'):
+            # Content is actually gzipped - decompress it
             try:
+                logger.info("Decompressing gzip content based on magic bytes")
                 content_bytes = gzip.decompress(content_bytes)
             except Exception as e:
                 return {
                     'success': False,
                     'error': f'Failed to decompress gzip content: {str(e)}'
                 }
+        elif content_encoding == 'gzip':
+            # Server claims gzip but content doesn't look gzipped
+            # This is common - requests library may have already decompressed it
+            logger.info("Server claims gzip but content appears already decompressed")
 
         # Decode to string
         try:
-            content = content_bytes.decode('utf-8', errors='ignore')
+            # Try UTF-8 first, then fallback to other encodings
+            try:
+                content = content_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                # Try to detect encoding from response headers
+                charset = 'utf-8'
+                content_type = response.headers.get('content-type', '')
+                if 'charset=' in content_type:
+                    charset = content_type.split('charset=')[1].split(';')[0].strip()
+
+                logger.info(f"UTF-8 failed, trying charset: {charset}")
+                content = content_bytes.decode(charset, errors='ignore')
+
         except Exception as e:
             return {
                 'success': False,
                 'error': f'Failed to decode content: {str(e)}'
             }
+
+        logger.info(f"Successfully decoded content, length: {len(content)} characters")
 
         # Parse and clean HTML
         soup = BeautifulSoup(content, 'html.parser')
@@ -187,7 +212,7 @@ def scrape_website(url: str) -> Dict[str, Any]:
 
         # Extract metadata
         title = soup.find('title')
-        title_text = title.string.strip() if title else "No title found"
+        title_text = title.string.strip() if title and title.string else "No title found"
 
         meta_description = soup.find('meta', attrs={'name': 'description'})
         description = meta_description.get('content', '') if meta_description else ''
